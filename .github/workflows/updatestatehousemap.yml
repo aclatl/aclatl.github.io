@@ -32,4 +32,4 @@ jobs:
           DATAWRAPPER_API_KEY: ${{ secrets.DATAWRAPPER_API_KEY }}
           DATAWRAPPER_CHART_ID: ${{ secrets.DATAWRAPPER_CHART_ID }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-        run: python update_chart.py
+        run: python UpdateStateHouseBattleMap.py
