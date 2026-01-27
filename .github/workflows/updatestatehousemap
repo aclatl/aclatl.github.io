@@ -1,0 +1,35 @@
+name: Update Datawrapper Chart
+
+on:
+  # Run twice daily at 8:00 AM and 8:00 PM UTC
+  schedule:
+    - cron: '0 8 * * *'   # 8:00 AM UTC
+    - cron: '0 20 * * *'  # 8:00 PM UTC
+  
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+
+jobs:
+  update-chart:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      - name: Update Datawrapper chart
+        env:
+          DATAWRAPPER_API_KEY: ${{ secrets.DATAWRAPPER_API_KEY }}
+          DATAWRAPPER_CHART_ID: ${{ secrets.DATAWRAPPER_CHART_ID }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        run: python update_chart.py
