@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>State House Partisan Voting Index</title>
+    <title>Georgia State House Partisan Voting Index</title>
     <style>
         * {
             margin: 0;
@@ -104,24 +104,24 @@
 
         .bar-rep {
             background: linear-gradient(135deg, #d6604d, #b2182b);
-            width: 55.6%;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-size: 11px;
             font-weight: 600;
+            transition: width 0.5s ease;
         }
 
         .bar-dem {
             background: linear-gradient(135deg, #2166ac, #4393c3);
-            width: 44.4%;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-size: 11px;
             font-weight: 600;
+            transition: width 0.5s ease;
         }
 
         .progress-section {
@@ -147,7 +147,28 @@
             height: 100%;
             background: linear-gradient(135deg, #2e7d32, #4caf50);
             border-radius: 4px;
-            transition: width 0.3s ease;
+            transition: width 0.5s ease;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .last-updated {
+            font-size: 10px;
+            color: #999;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        .error {
+            color: #b2182b;
+            font-size: 11px;
+            text-align: center;
+            padding: 10px;
         }
     </style>
 </head>
@@ -158,7 +179,7 @@
             <div class="section-title">Current Seats</div>
             
             <div class="counter-card">
-                <div class="counter-number republican">99</div>
+                <div class="counter-number republican" id="gop-seats">--</div>
                 <div class="counter-info">
                     <div class="counter-label">Republican Seats</div>
                     <div class="counter-subtitle">Current incumbents</div>
@@ -166,7 +187,7 @@
             </div>
 
             <div class="counter-card">
-                <div class="counter-number democratic">79</div>
+                <div class="counter-number democratic" id="dem-seats">--</div>
                 <div class="counter-info">
                     <div class="counter-label">Democrat Seats</div>
                     <div class="counter-subtitle">Current incumbents</div>
@@ -174,8 +195,8 @@
             </div>
 
             <div class="bar-container">
-                <div class="bar-rep">99</div>
-                <div class="bar-dem">79</div>
+                <div class="bar-rep" id="bar-rep" style="width: 50%;">--</div>
+                <div class="bar-dem" id="bar-dem" style="width: 50%;">--</div>
             </div>
         </div>
 
@@ -184,7 +205,7 @@
             <div class="section-title">GOP Challenger Status</div>
             
             <div class="counter-card">
-                <div class="counter-number confirmed">11</div>
+                <div class="counter-number confirmed" id="challengers-confirmed">--</div>
                 <div class="counter-info">
                     <div class="counter-label">Challengers Confirmed</div>
                     <div class="counter-subtitle">GOP vs Dem incumbent</div>
@@ -192,7 +213,7 @@
             </div>
 
             <div class="counter-card">
-                <div class="counter-number needed">68</div>
+                <div class="counter-number needed" id="challengers-needed">--</div>
                 <div class="counter-info">
                     <div class="counter-label">Challengers Needed</div>
                     <div class="counter-subtitle">Dem incumbent, no GOP challenger</div>
@@ -202,13 +223,147 @@
             <div class="progress-section">
                 <div class="progress-label">
                     <span>Recruitment Progress</span>
-                    <span>13.9%</span>
+                    <span id="progress-percent">--%</span>
                 </div>
                 <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" style="width: 13.9%;"></div>
+                    <div class="progress-bar-fill" id="progress-bar" style="width: 0%;"></div>
                 </div>
             </div>
         </div>
+
+        <div class="last-updated" id="last-updated"></div>
     </div>
+
+    <script>
+        // Google Sheet ID from your URL
+        const SHEET_ID = '1vJzXi5xYOoQVrArzPl3OBOz7yX5LME0UY9GKjCbuKEE';
+        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+
+        // Parse CSV text into array of objects
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = parseCSVLine(lines[0]);
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = parseCSVLine(lines[i]);
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header.trim().replace(/"/g, '')] = values[index] ? values[index].trim().replace(/"/g, '') : '';
+                });
+                data.push(row);
+            }
+            return data;
+        }
+
+        // Parse a single CSV line (handles quoted values)
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            return result;
+        }
+
+        // Calculate stats from data
+        function calculateStats(data) {
+            let gopSeats = 0;
+            let demSeats = 0;
+            let challengersConfirmed = 0;
+            let challengersNeeded = 0;
+
+            data.forEach(row => {
+                const party = row['Current Party'];
+                const status = row['Race Status'];
+
+                if (party === 'GOP') {
+                    gopSeats++;
+                } else if (party === 'DEM') {
+                    demSeats++;
+                }
+
+                if (status === 'Challenger Confirmed') {
+                    challengersConfirmed++;
+                } else if (status === 'Challenger Needed') {
+                    challengersNeeded++;
+                }
+            });
+
+            return {
+                gopSeats,
+                demSeats,
+                challengersConfirmed,
+                challengersNeeded
+            };
+        }
+
+        // Update the UI with calculated stats
+        function updateUI(stats) {
+            const { gopSeats, demSeats, challengersConfirmed, challengersNeeded } = stats;
+            const totalSeats = gopSeats + demSeats;
+            const totalDemSeats = challengersConfirmed + challengersNeeded;
+            const progressPercent = totalDemSeats > 0 ? ((challengersConfirmed / totalDemSeats) * 100).toFixed(1) : 0;
+
+            // Update seat counts
+            document.getElementById('gop-seats').textContent = gopSeats;
+            document.getElementById('dem-seats').textContent = demSeats;
+
+            // Update bar chart
+            const gopPercent = totalSeats > 0 ? (gopSeats / totalSeats) * 100 : 50;
+            const demPercent = totalSeats > 0 ? (demSeats / totalSeats) * 100 : 50;
+            
+            document.getElementById('bar-rep').style.width = gopPercent + '%';
+            document.getElementById('bar-rep').textContent = gopSeats;
+            document.getElementById('bar-dem').style.width = demPercent + '%';
+            document.getElementById('bar-dem').textContent = demSeats;
+
+            // Update challenger stats
+            document.getElementById('challengers-confirmed').textContent = challengersConfirmed;
+            document.getElementById('challengers-needed').textContent = challengersNeeded;
+
+            // Update progress bar
+            document.getElementById('progress-percent').textContent = progressPercent + '%';
+            document.getElementById('progress-bar').style.width = progressPercent + '%';
+
+            // Update timestamp
+            const now = new Date();
+            document.getElementById('last-updated').textContent = 'Last updated: ' + now.toLocaleString();
+        }
+
+        // Fetch data and update
+        async function fetchAndUpdate() {
+            try {
+                const response = await fetch(SHEET_URL);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data');
+                }
+                const text = await response.text();
+                const data = parseCSV(text);
+                const stats = calculateStats(data);
+                updateUI(stats);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('last-updated').innerHTML = '<span class="error">Error loading data. Make sure the sheet is publicly accessible.</span>';
+            }
+        }
+
+        // Initial fetch
+        fetchAndUpdate();
+
+        // Auto-refresh every 5 minutes (300000 ms)
+        setInterval(fetchAndUpdate, 300000);
+    </script>
 </body>
 </html>
